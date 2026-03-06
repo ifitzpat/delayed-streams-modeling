@@ -430,6 +430,103 @@ The element provides two complementary VAD mechanisms:
 Both can be enabled simultaneously for maximum signal richness, or
 individually depending on the application.
 
+* Latency
+
+** Transcription Latency
+
+End-to-end latency from spoken word to transcribed text depends primarily on
+the model's *algorithmic delay* (=asr_delay_in_tokens=), not GPU speed.  The
+model intentionally looks ahead by N tokens before committing to text output,
+trading latency for accuracy.
+
+| Component              | 1B (en/fr)  | 2.6B (en)    | Notes                                   |
+|------------------------+-------------+--------------+-----------------------------------------|
+| Audio chunk            | 80 ms       | 80 ms        | 1920 samples @ 24 kHz, fixed            |
+| Mimi tokeniser         | ~1 ms       | ~1 ms        | Small convolutional codec, trivial on GPU |
+| Algorithmic delay      | *480 ms*    | *2560 ms*    | 6 × 80 ms vs 32 × 80 ms                |
+| Transformer forward    | ~2–4 ms     | ~5–10 ms     | Single causal step with KV cache        |
+| Word assembly          | 0–160 ms    | 0–160 ms     | Word emitted when next word starts      |
+|------------------------+-------------+--------------+-----------------------------------------|
+| *Total (spoken → text)* | *~560–640 ms* | *~2640–2720 ms* |                                    |
+
+The algorithmic delay is set by =asr_delay_in_tokens= in the config:
+
+- *1B model*: =asr_delay_in_tokens = 6= → 6 × 80 ms = 480 ms
+- *2.6B model*: =asr_delay_in_tokens = 32= → 32 × 80 ms = 2560 ms
+
+GPU performance (e.g. RTX 3060 vs RTX 5090) affects only the transformer
+forward pass (~2–10 ms), which is negligible compared to the algorithmic delay.
+
+** Turn-End Detection Latency
+
+Two complementary mechanisms detect when a speaker has finished their turn:
+
+*** Energy-based turn-end
+
+The energy-based pause detector (=vad.rs=) fires =turn-end= after sustained
+silence following speech.  Default timing:
+
+| Stage                  | Duration  | Configurable via            |
+|------------------------+-----------+-----------------------------|
+| Silence hysteresis     | 150 ms    | =signal-silence-hysteresis=   |
+| Turn silence threshold | 500 ms    | =turn-silence-threshold=      |
+|------------------------+-----------+-----------------------------|
+| *Total from last speech* | *~650 ms* |                             |
+
+Requirements: silence ≥ =turn-silence-threshold= (500 ms) after speech ≥
+=min-turn-speech-duration= (200 ms).
+
+*** Neural (semantic) turn-end
+
+The model's extra heads predict no-speech probability at 4 time horizons.
+The 2-second horizon (index 2) is the primary turn-end signal:
+
+| Horizon index | Look-ahead | Purpose              |
+|---------------+------------+----------------------|
+|             0 | ~0.5 s     | Immediate            |
+|             1 | ~1.0 s     | Short-term           |
+|             2 | ~2.0 s     | *Primary turn signal* |
+|             3 | ~3.0 s     | Long-term            |
+
+The signal fires when =prs[2] > no-speech-threshold= (default: 0.6).
+
+Because the neural VAD runs through the transformer, the algorithmic delay
+applies.  Expected latency from last speech:
+
+| Model | Algorithmic delay | Neural turn-end latency |
+|-------+-------------------+-------------------------|
+| 1B    | 480 ms            | ~560–720 ms             |
+| 2.6B  | 2560 ms           | ~2.6–3.0 s              |
+
+The semantic VAD is more accurate than energy-based detection — it
+understands linguistic context and can distinguish intentional pauses
+(e.g. mid-sentence thinking) from actual turn endings.
+
+*** Combined behaviour
+
+When both systems are enabled, the earliest signal wins.
+
+| Model | Energy turn-end | Neural turn-end | First signal  |
+|-------+-----------------+-----------------+---------------|
+| 1B    | ~650 ms         | ~560–720 ms     | ~560–650 ms   |
+| 2.6B  | ~650 ms         | ~2.6–3.0 s      | ~650 ms (energy) |
+
+For the *1B model*, both signals arrive at roughly the same time, providing
+high-confidence turn detection.  For the *2.6B model*, the energy-based
+signal fires first; the neural signal can be used as a delayed confirmation.
+
+*** Tuning for lower latency
+
+To reduce turn-end latency at the cost of more false positives:
+
+- Lower =turn-silence-threshold= (e.g. 300 ms instead of 500 ms)
+- Lower =signal-silence-hysteresis= (e.g. 80 ms instead of 150 ms)
+- Lower =no-speech-threshold= (e.g. 0.4 instead of 0.6)
+
+For voice agents, the 1B model is recommended — it provides ~560–650 ms
+turn-end latency with semantic understanding, which is sufficient for
+responsive conversational interaction.
+
 * Differences from whispertranscribe
 
 | Aspect                | whispertranscribe          | kyutaistt                          |
