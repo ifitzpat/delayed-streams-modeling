@@ -1,0 +1,455 @@
+#+TITLE: gst-kyutaistt — GStreamer Element for Kyutai STT
+#+AUTHOR: Kyutai
+#+OPTIONS: toc:3 num:t ^:nil
+
+* Overview
+
+=gst-kyutaistt= is a GStreamer element that performs speech-to-text using
+[[https://huggingface.co/kyutai][Kyutai STT]] models.  It is written entirely in Rust (no Python dependency)
+and is designed as a drop-in replacement for =whispertranscribe=, sharing the
+same pad caps, JSON output format, and signal interface.
+
+Inference runs through [[https://github.com/huggingface/candle][Candle]] (Meta's Rust ML framework).  Audio
+tokenisation uses the Mimi codec.  Text decoding uses SentencePiece (C++,
+compiled natively via =sentencepiece-sys=).  *Zero Python at build-time or
+run-time.*
+
+** Available models
+
+| Repository                        | Parameters | Languages     |
+|-----------------------------------+------------+---------------|
+| =kyutai/stt-1b-en_fr-candle=        | 1 B        | English, French |
+| =kyutai/stt-2.6b-en-candle=         | 2.6 B      | English       |
+
+Models are downloaded automatically from HuggingFace Hub on first use.
+
+* Building
+
+** Prerequisites
+
+- Rust toolchain (stable, edition 2021+)
+- GStreamer 1.14+ development headers
+- CMake (for sentencepiece-sys)
+- pkg-config
+
+On Debian/Ubuntu:
+
+#+begin_src sh
+apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+               cmake pkg-config
+#+end_src
+
+** Compile
+
+#+begin_src sh
+cd gst-kyutaistt
+cargo build --release
+#+end_src
+
+For GPU acceleration, add a feature flag:
+
+#+begin_src sh
+cargo build --release --features cuda    # NVIDIA CUDA
+cargo build --release --features cudnn   # NVIDIA cuDNN
+cargo build --release --features metal   # Apple Metal
+#+end_src
+
+The output is a shared library: =target/release/libgstkyutaistt.so= (Linux)
+or =libgstkyutaistt.dylib= (macOS).
+
+** Install
+
+#+begin_src sh
+# System-wide
+cp target/release/libgstkyutaistt.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
+
+# Or per-session
+export GST_PLUGIN_PATH=$PWD/target/release
+#+end_src
+
+Verify:
+
+#+begin_src sh
+gst-inspect-1.0 kyutaistt
+#+end_src
+
+* Usage
+
+** Basic file transcription
+
+#+begin_src sh
+gst-launch-1.0 \
+  filesrc location=audio.wav ! decodebin ! audioresample ! audioconvert \
+  ! "audio/x-raw,format=F32LE,rate=24000,channels=1" \
+  ! kyutaistt model=kyutai/stt-1b-en_fr-candle \
+  ! fakesink dump=true
+#+end_src
+
+** Microphone input (PulseAudio)
+
+#+begin_src sh
+gst-launch-1.0 \
+  pulsesrc ! audioconvert ! audioresample \
+  ! "audio/x-raw,format=F32LE,rate=24000,channels=1" \
+  ! kyutaistt model=kyutai/stt-1b-en_fr-candle enable-vad=true \
+  ! fakesink dump=true
+#+end_src
+
+** With resampling (48 kHz input)
+
+The element accepts 8/16/22.05/24/44.1/48 kHz input and resamples internally
+to 24 kHz.  Preferred input is 24 kHz F32LE mono (zero-copy path).
+
+#+begin_src sh
+gst-launch-1.0 \
+  filesrc location=recording_48k.wav ! decodebin ! audioresample \
+  ! "audio/x-raw,format=F32LE,rate=48000,channels=1" \
+  ! kyutaistt \
+  ! fakesink dump=true
+#+end_src
+
+** CPU-only mode
+
+#+begin_src sh
+gst-launch-1.0 \
+  filesrc location=audio.wav ! decodebin ! audioresample ! audioconvert \
+  ! "audio/x-raw,format=F32LE,rate=24000,channels=1" \
+  ! kyutaistt use-cpu=true \
+  ! fakesink dump=true
+#+end_src
+
+* Pad Diagram
+
+#+begin_example
+                    ┌──────────────────────────────────────────┐
+                    │              kyutaistt                    │
+                    │                                          │
+  audio/x-raw      │  ┌────────────────────────────────┐      │  application/x-json-transcription
+  F32LE | S16LE     │  │                                │      │  format=whisper
+  8-48kHz           │  │   Format Conversion            │      │
+  mono | stereo     │  │       │                        │      │
+ ───────────────────┤  │       ▼                        │      ├──────────────────────────────────►
+     sink (ALWAYS)  │  │   Resampler (rubato)           │      │     src (ALWAYS)
+                    │  │   → 24 kHz mono                │      │
+                    │  │       │                        │      │
+                    │  │       ├──► PauseDetector        │      │
+                    │  │       │    (energy-based)       │      │
+                    │  │       ▼                        │      │
+                    │  │   Mimi Audio Tokenizer          │      │
+                    │  │       │                        │      │
+                    │  │       ▼                        │      │
+                    │  │   Transformer LM (Candle)       │      │
+                    │  │   + Neural VAD head             │      │
+                    │  │       │                        │      │
+                    │  │       ▼                        │      │
+                    │  │   SentencePiece Decoder         │      │
+                    │  │       │                        │      │
+                    │  │       ▼                        │      │
+                    │  │   JSON Segment Builder ────────┼──────┘
+                    │  │                                │
+                    │  └────────────────────────────────┘
+                    │                                          │
+ ───────────────────┤                                          │
+     ctrl (REQUEST) │  Runtime control                         │
+  application/      │  (JSON commands)                         │
+  x-whisper-control │                                          │
+                    └──────────────────────────────────────────┘
+
+ Signals emitted (active during PLAYING):
+   model-loaded ──────────► model lifecycle
+   model-unloaded
+   model-load-failed
+   model-info
+   segment-transcribed ───► transcription events
+   language-detected
+   transcription-started
+   transcription-completed
+   vad-speech-detected ───► VAD / speech activity
+   speech-start
+   speech-end
+   silence-detected
+   pause-detected
+   boundary-detected
+   turn-end ──────────────► turn-taking
+   mode-changed ──────────► configuration
+   buffer-overflow ───────► diagnostics
+#+end_example
+
+* Pads
+
+** sink (ALWAYS)
+
+Audio input pad.  Accepts raw audio; internally resampled and downmixed to
+24 kHz mono for model processing.
+
+#+begin_example
+audio/x-raw,
+    format   = { F32LE, S16LE },
+    rate     = { 8000, 16000, 22050, 24000, 44100, 48000 },
+    channels = { 1, 2 }
+#+end_example
+
+Preferred negotiation: =F32LE, rate=24000, channels=1=.  Other
+rates/channels are accepted but converted internally.
+
+| Format | Bytes/sample/channel | Notes                         |
+|--------+----------------------+-------------------------------|
+| F32LE  |                    4 | Preferred, no conversion needed |
+| S16LE  |                    2 | Converted to float internally |
+
+** src (ALWAYS)
+
+JSON transcription output pad.  Each buffer contains a JSON object with
+transcription segments.
+
+#+begin_example
+application/x-json-transcription,
+    format = whisper
+#+end_example
+
+Output buffer allocation: 64 KB per transform call.
+
+*** JSON Output Format
+
+Each output buffer contains a JSON object with transcription segments:
+
+#+begin_src json
+{
+  "segments": [
+    {
+      "text": "transcribed text here",
+      "start_time": 1.234,
+      "end_time": 1.567,
+      "confidence": 1.0,
+      "language": "auto",
+      "tokens": [
+        {
+          "text": "transcribed",
+          "prob": 1.0,
+          "start_ms": 1234,
+          "end_ms": 1567,
+          "start_sample": 29616,
+          "end_sample": 37608
+        }
+      ]
+    }
+  ]
+}
+#+end_src
+
+When no words are produced for a given buffer, the output is:
+
+#+begin_src json
+{"segments":[]}
+#+end_src
+
+** ctrl (REQUEST)
+
+Optional control pad for runtime commands.  Created on demand; at most one
+ctrl pad exists at a time.
+
+#+begin_example
+application/x-whisper-control
+#+end_example
+
+*** Control Commands
+
+JSON messages pushed to the ctrl pad:
+
+#+begin_src json
+{ "command": "set_language", "language": "fr" }
+#+end_src
+
+Created via =gst_element_request_pad()= or autoplugging.  Released via
+=gst_element_release_request_pad()=.
+
+* Properties
+
+** Model & Core
+
+| Property          | Type   | Default                       | Range     | Description                          |
+|-------------------+--------+-------------------------------+-----------+--------------------------------------|
+| =model=             | string | =kyutai/stt-1b-en_fr-candle=    | HF repo   | HuggingFace repo ID or local path    |
+| =model-path=        | string | =model.safetensors=             | filename  | Model weights file within the repo   |
+| =language=          | string | =auto=                          | ISO 639-1 | Language code ("auto" to detect)     |
+| =use-cpu=           | bool   | FALSE                         |           | Force CPU inference (disable GPU)    |
+| =temperature=       | float  | 0.0                           | 0.0..1.0  | Sampling temperature                 |
+| =initial-prompt=    | string | NULL                          | text      | Optional context prompt              |
+
+** Transcription
+
+| Property             | Type | Default | Description                |
+|----------------------+------+---------+----------------------------|
+| =detect-language=      | bool | TRUE    | Auto-detect language       |
+| =use-unix-timestamps=  | bool | FALSE   | Unix timestamps in output  |
+
+** VAD (Neural)
+
+The Kyutai STT model has a built-in neural VAD head that predicts
+no-speech probability at multiple time horizons (~0.5s, ~1s, ~2s, ~3s).
+
+| Property               | Type  | Default | Range     | Description                          |
+|------------------------+-------+---------+-----------+--------------------------------------|
+| =enable-vad=             | bool  | TRUE    |           | Enable neural voice activity detection |
+| =vad-threshold=          | float | 0.7     | 0.0..1.0  | VAD speech probability threshold     |
+| =no-speech-threshold=    | float | 0.6     | 0.0..1.0  | No-speech probability threshold (2s horizon) |
+
+** Pause & Turn-Taking Detection
+
+Energy-based heuristics that supplement the neural VAD.
+
+| Property                    | Type   | Default | Range     | Description                          |
+|-----------------------------+--------+---------+-----------+--------------------------------------|
+| =enable-pause-detection=      | bool   | TRUE    |           | Enable energy-based pause signals    |
+| =pause-energy-threshold=      | double | 0.005   | 0.0..1.0  | RMS energy threshold for pause       |
+| =pause-min-duration=          | uint   | 100     | 0..5000   | Min pause duration (ms)              |
+| =boundary-min-duration=       | uint   | 200     | 0..5000   | Min pause for boundary (ms)          |
+| =turn-silence-threshold=      | uint   | 500     | 100..5000 | Silence for turn-end (ms)            |
+| =min-turn-speech-duration=    | uint   | 200     | 0..5000   | Min speech before turn-end (ms)      |
+| =signal-speech-hysteresis=    | uint   | 60      | 0..1000   | Debounce: speech start (ms)          |
+| =signal-silence-hysteresis=   | uint   | 150     | 0..1000   | Debounce: speech end (ms)            |
+
+* Signals
+
+** Model Lifecycle
+
+| Signal              | Parameters                    | Description               |
+|---------------------+-------------------------------+---------------------------|
+| =model-loaded=        | (string hf_repo)              | Model successfully loaded |
+| =model-unloaded=      | (void)                        | Model unloaded            |
+| =model-load-failed=   | (string error_message)        | Model load failure        |
+| =model-info=          | (GstStructure* info)          | Model details after load  |
+
+=model-info= structure fields: =type=, =sample-rate=, =gpu-enabled=, =hf-repo=, =quantized=.
+
+** Transcription Events
+
+| Signal                  | Parameters                              | Description              |
+|-------------------------+-----------------------------------------+--------------------------|
+| =segment-transcribed=     | (GstStructure* segment_data)            | Each transcribed segment |
+| =language-detected=       | (string language, double probability)   | Language detection result |
+| =transcription-started=   | (int64 timestamp_ns)                    | Transcription begins     |
+| =transcription-completed= | (int64 timestamp_ns, int64 duration_ns) | Transcription ends       |
+
+** VAD & Speech Activity
+
+| Signal                 | Parameters                                     | Description              |
+|------------------------+------------------------------------------------+--------------------------|
+| =vad-speech-detected=    | (int64 timestamp_ns, bool is_speech)           | Neural VAD state change  |
+| =speech-start=           | (int64 timestamp_ns)                           | Speech begins (debounced) |
+| =speech-end=             | (int64 timestamp_ns, int64 duration_ns)        | Speech ends (debounced)  |
+| =silence-detected=       | (int64 timestamp_ns, int64 duration_ns)        | Extended silence         |
+| =pause-detected=         | (int64 timestamp_ns, int64 duration_ns, double energy) | Brief pause during speech |
+| =boundary-detected=      | (int64 timestamp_ns, double confidence)        | Likely sentence boundary |
+
+** Turn-Taking
+
+| Signal     | Parameters                                                           | Description        |
+|------------+----------------------------------------------------------------------+--------------------|
+| =turn-end=   | (int64 timestamp_ns, int64 speech_duration_ns, int64 silence_ns)   | Debounced turn-end |
+
+** Diagnostics
+
+| Signal            | Parameters                     | Description                |
+|-------------------+--------------------------------+----------------------------|
+| =buffer-overflow=   | (uint64 dropped_samples)       | Buffer overflow warning    |
+| =mode-changed=      | (int32 old_mode, int32 new_mode) | Configuration mode changed |
+
+* Architecture
+
+** Source Layout
+
+#+begin_example
+gst-kyutaistt/
+├── Cargo.toml       # cdylib crate; depends on gstreamer 0.23 + candle/moshi
+├── Cargo.lock       # Pinned dependencies
+├── build.rs         # gst-plugin-version-helper
+└── src/
+    ├── lib.rs       # Plugin registration (element name: "kyutaistt")
+    ├── imp.rs       # GstElement implementation (BaseTransform subclass)
+    ├── model.rs     # Kyutai STT model wrapper (adapted from stt-rs)
+    └── vad.rs       # Energy-based pause / turn-taking detector
+#+end_example
+
+** Processing Pipeline
+
+1. *Format conversion* — S16LE samples are converted to F32LE.
+2. *Downmix* — Stereo input is averaged to mono.
+3. *Resampling* — Non-24kHz input is resampled via [[https://crates.io/crates/rubato][rubato]] (FFT-based).
+4. *Chunking* — Audio is accumulated and processed in 1920-sample chunks
+   (80 ms at 24 kHz), which is the model's native step size.
+5. *Pause detection* — Energy-based RMS analysis with debounced
+   speech/silence transitions, boundary detection, and turn-end heuristics.
+6. *Mimi tokenisation* — PCM is encoded into discrete audio tokens by the
+   Mimi neural codec.
+7. *Transformer inference* — Audio tokens are processed by the causal
+   transformer LM, which outputs text tokens and (optionally) VAD
+   probabilities at multiple time horizons.
+8. *SentencePiece decoding* — Text token IDs are decoded to Unicode text
+   with word boundaries and timing information.
+9. *JSON serialisation* — Words are formatted into the whisper-compatible
+   JSON schema and written to the src pad buffer.
+
+** State Machine
+
+#+begin_example
+  NULL ──► READY ──► PAUSED ──► PLAYING
+   │         │                     │
+   │    model loaded          inference runs
+   │    (HF Hub download)     (chunk-by-chunk)
+   │         │                     │
+   ◄─────────┘                     │
+  READY ◄── PAUSED ◄── PLAYING ◄───┘
+   │
+   ▼
+  NULL (model unloaded)
+#+end_example
+
+- *NULL → READY*: Model is downloaded from HuggingFace Hub (if not cached)
+  and loaded into memory.  Signals =model-loaded= and =model-info= are
+  emitted.  On failure, =model-load-failed= is emitted and the state
+  transition fails.
+- *READY → NULL*: Model is unloaded.  Signal =model-unloaded= is emitted.
+- *EOS*: Remaining audio is flushed through the model by feeding silence
+  to ensure all pending words are emitted.
+
+** Dual VAD System
+
+The element provides two complementary VAD mechanisms:
+
+1. *Neural VAD* (=enable-vad=) — The Kyutai STT model's built-in VAD head
+   predicts no-speech probability at 4 time horizons (~0.5s, ~1s, ~2s,
+   ~3s).  The 2-second horizon is used as the primary signal.  This is
+   semantic-level VAD that understands speech content.
+
+2. *Energy-based VAD* (=enable-pause-detection=) — RMS energy analysis with
+   configurable hysteresis for debounced speech/silence transitions.  This
+   drives the =speech-start=, =speech-end=, =pause-detected=,
+   =boundary-detected=, and =turn-end= signals.
+
+Both can be enabled simultaneously for maximum signal richness, or
+individually depending on the application.
+
+* Differences from whispertranscribe
+
+| Aspect                | whispertranscribe          | kyutaistt                          |
+|-----------------------+----------------------------+------------------------------------|
+| Backend               | whisper.cpp (C++)          | Candle + Moshi (Rust)              |
+| Model format          | GGUF files (local)         | SafeTensors / GGUF (HuggingFace)   |
+| Model property        | =model= (filepath)          | =model= (HF repo ID)                |
+| Native sample rate    | 16 kHz                     | 24 kHz                             |
+| Streaming             | Sliding window + consensus | Native streaming (80ms chunks)     |
+| VAD                   | Silero VAD (ONNX)          | Built-in neural VAD head           |
+| Python dependency     | None (C++)                 | None (Rust)                        |
+| GPU support           | Via whisper.cpp            | CUDA, cuDNN, Metal (compile flags) |
+| Quantisation          | GGUF built-in              | GGUF support via Candle            |
+
+The element is pad-compatible: same sink caps, same src caps
+(=application/x-json-transcription,format=whisper=), same ctrl pad caps,
+same signal names and parameter types.  Existing pipelines can switch
+backends by replacing =whispertranscribe= with =kyutaistt= and adjusting the
+=model= property.
+
+* License
+
+MIT OR Apache-2.0 (same as the plugin crate).
