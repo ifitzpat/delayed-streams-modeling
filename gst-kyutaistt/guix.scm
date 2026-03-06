@@ -7,19 +7,25 @@
 ;;; After building or in a shell, set the plugin path:
 ;;;   export GST_PLUGIN_PATH=$GUIX_ENVIRONMENT/lib/gstreamer-1.0
 ;;;   gst-inspect-1.0 kyutaistt
+;;;
+;;; Note: Guix does not package most Rust crates (none of the 17 direct
+;;; dependencies exist in Guix as of 2025).  This package uses the
+;;; gnu-build-system with Cargo invoked manually, allowing Cargo to
+;;; fetch crates at build time.  This is not ideal for reproducibility
+;;; but is the only practical approach until Guix's Rust ecosystem grows.
 (define-module (gst-kyutaistt)
   #:use-module (guix packages)
   #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module (guix utils)
-  #:use-module (guix build-system cargo)
+  #:use-module (guix build-system gnu)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages)
   #:use-module (gnu packages cmake)
   #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages rust)
-  #:use-module (gnu packages crates-io))
+  #:use-module (gnu packages tls))
 
 (define vcs-file?
   ;; Return true if the given file is under version control.
@@ -34,44 +40,41 @@
      (local-file "." "gst-kyutaistt-checkout"
                  #:recursive? #t
                  #:select? vcs-file?))
-    (build-system cargo-build-system)
+    (build-system gnu-build-system)
     (arguments
      (list
-      #:cargo-inputs
-      `(("rust-anyhow" ,rust-anyhow-1)
-        ("rust-candle-core" ,rust-candle-core-0.9)
-        ("rust-candle-nn" ,rust-candle-nn-0.9)
-        ("rust-candle-transformers" ,rust-candle-transformers-0.9)
-        ("rust-gstreamer" ,rust-gstreamer-0.23)
-        ("rust-gstreamer-base" ,rust-gstreamer-base-0.23)
-        ("rust-gstreamer-audio" ,rust-gstreamer-audio-0.23)
-        ("rust-glib" ,rust-glib-0.20)
-        ("rust-once-cell" ,rust-once-cell-1)
-        ("rust-hf-hub" ,rust-hf-hub-0.4)
-        ("rust-kaudio" ,rust-kaudio-0.2)
-        ("rust-moshi" ,rust-moshi-0.6)
-        ("rust-rubato" ,rust-rubato-0.16)
-        ("rust-sentencepiece" ,rust-sentencepiece-0.11)
-        ("rust-serde" ,rust-serde-1)
-        ("rust-serde-json" ,rust-serde-json-1))
-      #:cargo-build-flags ''("--release")
-      #:install-source? #f
       #:phases
       #~(modify-phases %standard-phases
-          (add-after 'install 'install-plugin
+          (delete 'configure)
+          (replace 'build
+            (lambda* (#:key inputs #:allow-other-keys)
+              ;; Set up pkg-config to find GStreamer headers/libs
+              (setenv "PKG_CONFIG_PATH"
+                      (string-append
+                       (assoc-ref inputs "gstreamer") "/lib/pkgconfig:"
+                       (assoc-ref inputs "gst-plugins-base") "/lib/pkgconfig:"
+                       (or (getenv "PKG_CONFIG_PATH") "")))
+              ;; Allow Cargo network access for crate downloads
+              (setenv "CARGO_HOME" (string-append (getcwd) "/.cargo"))
+              (invoke "cargo" "build" "--release")))
+          (delete 'check)
+          (replace 'install
             (lambda* (#:key outputs #:allow-other-keys)
-              (let* ((out (assoc-ref outputs "out"))
-                     (gst-plugin-dir
-                      (string-append out "/lib/gstreamer-1.0")))
+              (let ((gst-plugin-dir
+                     (string-append (assoc-ref outputs "out")
+                                    "/lib/gstreamer-1.0")))
                 (mkdir-p gst-plugin-dir)
                 (install-file "target/release/libgstkyutaistt.so"
                               gst-plugin-dir)))))))
     (native-inputs
      (list cmake                                  ; for sentencepiece-sys
-           pkg-config))
+           pkg-config
+           rust
+           `(,rust "cargo")))
     (inputs
      (list gstreamer
-           gst-plugins-base))
+           gst-plugins-base
+           openssl))                              ; for hf-hub HTTPS downloads
     (home-page
      "https://huggingface.co/kyutai")
     (synopsis
