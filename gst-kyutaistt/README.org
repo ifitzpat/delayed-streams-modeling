@@ -547,6 +547,160 @@ same signal names and parameter types.  Existing pipelines can switch
 backends by replacing =whispertranscribe= with =kyutaistt= and adjusting the
 =model= property.
 
+* Training New Language Models
+
+The 1B architecture can be retrained or fine-tuned for additional languages.
+This section documents the hardware requirements and expected performance
+trade-offs for each approach.
+
+** Architecture Summary (1B variant)
+
+| Component             | Value                          |
+|-----------------------+--------------------------------|
+| Transformer layers    | 16                             |
+| Hidden dimension      | 2048                           |
+| Attention heads       | 16                             |
+| FFN dimension         | 8192                           |
+| Audio codebooks       | 32 (Mimi encoder)              |
+| Text vocabulary       | 8000 tokens (SentencePiece)    |
+| Context window        | 750 tokens                     |
+| Audio token rate      | 12.5 tokens/sec (80 ms chunks) |
+| Norm                  | RMSNorm, pre-norm              |
+| Position encoding     | RoPE                           |
+
+The audio side (Mimi codec) is language-independent — it encodes acoustic
+features regardless of language.  All language-specific knowledge lives in
+the transformer weights and the text tokeniser.  This means you do *not*
+need to retrain the audio encoder.
+
+** What Needs to Change Per Language
+
+1. *SentencePiece tokeniser* — retrain on target-language text (trivial,
+   runs in minutes on CPU)
+2. *Text embeddings* — reinitialise the input embedding (8001 × 2048) and
+   output projection (2048 × 8000), ~32M parameters total
+3. *Transformer weights* — fine-tune or train from scratch
+
+The Mimi audio codec is reused as-is.
+
+** Hardware Requirements
+
+*** Full training from scratch
+
+Train the entire 1B transformer on paired audio/transcript data from
+scratch.
+
+| Resource        | Recommendation              |
+|-----------------+-----------------------------|
+| GPUs            | 4–8× A100-80GB or H100-80GB |
+| VRAM per GPU    | 80 GB                       |
+| Interconnect    | NVLink or InfiniBand        |
+| Training data   | 5,000–50,000 hours          |
+| Training time   | Days to weeks               |
+
+*Expected quality*: Best possible — the model learns the target language's
+phonetics, prosody, and grammar from the ground up.  This is what Kyutai
+did for the released en/fr model.
+
+*When to choose this*: When you have ≥10,000 hours of high-quality
+transcribed speech and want maximum accuracy.
+
+*** Full fine-tune from existing checkpoint
+
+Start from the en_fr checkpoint, swap the tokeniser and text
+embeddings, and fine-tune all transformer weights.
+
+| Resource        | Recommendation                  |
+|-----------------+---------------------------------|
+| GPUs            | 1–2× A100-80GB or 1× H100-80GB |
+| VRAM per GPU    | 40–80 GB                        |
+| Training data   | 1,000–10,000 hours              |
+| Training time   | Hours to days                   |
+
+*Expected quality*: Very good.  The transformer has already learned
+general speech-to-text mappings from English/French; it transfers well to
+related languages (e.g. Spanish, German, Italian) and reasonably well to
+more distant ones (e.g. Mandarin, Arabic) given enough data.  Expect
+5–15% higher WER than from-scratch training at the same data scale, but
+dramatically less compute.
+
+*When to choose this*: The recommended default for most new languages.
+Best balance of quality, cost, and turnaround time.
+
+*** LoRA / QLoRA fine-tune
+
+Freeze most weights and train low-rank adapters (rank 16–32) on top.
+
+| Resource        | Recommendation            |
+|-----------------+---------------------------|
+| GPUs            | 1× RTX 4090 / A6000 (24 GB) |
+| VRAM per GPU    | 16–24 GB                  |
+| Training data   | 100–500 hours             |
+| Training time   | Hours                     |
+
+*Expected quality*: Good for well-resourced languages where the
+pre-trained model already has some cross-lingual transfer.  Expect
+15–30% higher WER than full fine-tuning.  May struggle with
+phonologically distant languages or heavily accented speech.
+
+*When to choose this*: Quick prototyping, low-resource languages where
+you have limited data, or when you only have consumer GPU hardware.
+
+** Expected Performance Comparison
+
+| Scenario          | Relative WER | Compute cost | Data needed    | Turnaround | Best for                      |
+|-------------------+--------------+--------------+----------------+------------+-------------------------------|
+| From scratch      | 1.0× (best)  | $$$$         | 5K–50K hours   | Weeks      | Production, maximum quality   |
+| Full fine-tune    | 1.05–1.15×   | $$           | 1K–10K hours   | Days       | Most new languages (default)  |
+| LoRA fine-tune    | 1.15–1.30×   | $            | 100–500 hours  | Hours      | Prototyping, budget hardware  |
+
+Notes:
+- WER = Word Error Rate; lower is better.  "1.0×" = baseline from-scratch.
+- Real WER depends heavily on language, domain, and data quality.
+- Languages phonologically close to English/French (e.g. Spanish, German)
+  benefit most from transfer learning.
+- Tonal languages (Mandarin, Vietnamese) or agglutinative languages
+  (Turkish, Finnish) may need more data and benefit less from transfer.
+
+** VRAM Breakdown (Full Fine-Tune, bf16)
+
+For a single-GPU full fine-tune, the memory budget is roughly:
+
+| Component               | Size      |
+|-------------------------+-----------|
+| Model weights (bf16)    | ~2 GB     |
+| Gradients (bf16)        | ~2 GB     |
+| AdamW optimizer states  | ~8 GB     |
+| Activations (batch=1)   | ~4–8 GB   |
+| Activations (batch=16)  | ~20–40 GB |
+| Framework overhead      | ~2–4 GB   |
+|-------------------------+-----------|
+| *Total (batch=1)*       | *~18 GB*  |
+| *Total (batch=16)*      | *~40 GB*  |
+
+With gradient checkpointing, activation memory can be reduced ~3× at the
+cost of ~30% slower training.
+
+** Data Sources
+
+Good multilingual speech corpora for training:
+
+- [[https://commonvoice.mozilla.org/][Mozilla Common Voice]] — crowd-sourced, 100+ languages, variable quality
+- [[https://www.openslr.org/94/][Multilingual LibriSpeech (MLS)]] — read speech, 8 languages, high quality
+- [[https://github.com/facebookresearch/voxpopuli][VoxPopuli]] — European Parliament, 23 languages
+- [[https://ai.google/tools/datasets/fleurs/][FLEURS]] — Few-shot evaluation set, 102 languages (small but diverse)
+- [[https://openslr.org/12/][LibriSpeech]] — English only, gold standard for benchmarking
+
+The hardest part is not compute — it is getting *high-quality aligned
+audio/transcript pairs* at scale for the target language.
+
+** Inference Cost After Training
+
+All training scenarios produce a model with identical inference
+characteristics: same 1B architecture, same 80 ms chunk latency, same
+VRAM footprint (~2–4 GB).  The training method affects only accuracy,
+not runtime performance.
+
 * License
 
 MIT OR Apache-2.0 (same as the plugin crate).
