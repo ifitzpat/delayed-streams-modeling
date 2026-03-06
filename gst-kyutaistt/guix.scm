@@ -1,18 +1,23 @@
 ;;; guix.scm --- Guix package definition for gst-kyutaistt
-;;; This file can be used to test gst-kyutaistt locally with Guix:
 ;;;
-;;;   guix shell -D -f guix.scm          # Development environment
-;;;   guix build -f guix.scm             # Build the package
+;;; Development environment (recommended):
 ;;;
-;;; After building or in a shell, set the plugin path:
-;;;   export GST_PLUGIN_PATH=$GUIX_ENVIRONMENT/lib/gstreamer-1.0
+;;;   guix shell -D -f guix.scm
+;;;   cargo build --release
+;;;   export GST_PLUGIN_PATH=$PWD/target/release
 ;;;   gst-inspect-1.0 kyutaistt
 ;;;
-;;; Note: Guix does not package most Rust crates (none of the 17 direct
-;;; dependencies exist in Guix as of 2025).  This package uses the
-;;; gnu-build-system with Cargo invoked manually, allowing Cargo to
-;;; fetch crates at build time.  This is not ideal for reproducibility
-;;; but is the only practical approach until Guix's Rust ecosystem grows.
+;;; Full sandboxed build (requires vendored dependencies):
+;;;
+;;;   cargo vendor                          # run once, outside Guix
+;;;   guix build -f guix.scm               # builds inside sandbox
+;;;
+;;; The sandboxed build requires a vendor/ directory because Guix builds
+;;; run without network access, and none of the 17 direct Rust crate
+;;; dependencies are packaged in Guix.  Run `cargo vendor` to populate
+;;; vendor/ before `guix build`.  The vendor/ directory is included in
+;;; the source via the vcs-file? predicate (commit it, or remove the
+;;; predicate to include untracked files).
 (define-module (gst-kyutaistt)
   #:use-module (guix packages)
   #:use-module (guix gexp)
@@ -48,14 +53,18 @@
           (delete 'configure)
           (replace 'build
             (lambda* (#:key inputs #:allow-other-keys)
-              ;; Set up pkg-config to find GStreamer headers/libs
-              (setenv "PKG_CONFIG_PATH"
-                      (string-append
-                       (assoc-ref inputs "gstreamer") "/lib/pkgconfig:"
-                       (assoc-ref inputs "gst-plugins-base") "/lib/pkgconfig:"
-                       (or (getenv "PKG_CONFIG_PATH") "")))
-              ;; Allow Cargo network access for crate downloads
+              ;; Point Cargo at vendored dependencies (no network in sandbox)
               (setenv "CARGO_HOME" (string-append (getcwd) "/.cargo"))
+              (mkdir-p ".cargo")
+              (when (file-exists? "vendor")
+                (call-with-output-file ".cargo/config.toml"
+                  (lambda (port)
+                    (format port
+                            "[source.crates-io]~%~
+                             replace-with = \"vendored-sources\"~%~
+                             ~%~
+                             [source.vendored-sources]~%~
+                             directory = \"vendor\"~%"))))
               (invoke "cargo" "build" "--release")))
           (delete 'check)
           (replace 'install
