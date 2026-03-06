@@ -306,7 +306,7 @@ Energy-based heuristics that supplement the neural VAD.
 | =boundary-min-duration=      | uint   |     200 |   0..5000 | Min pause for boundary (ms)       |
 | =turn-silence-threshold=     | uint   |     500 | 100..5000 | Silence for turn-end (ms)         |
 | =min-turn-speech-duration=   | uint   |     200 |   0..5000 | Min speech before turn-end (ms)   |
-| =signal-speech-hysteresis= | uint   |      60 |   0..1000 | Debounce: speech start (ms)       |
+| =signal-speech-hysteresis=   | uint   |      60 |   0..1000 | Debounce: speech start (ms)       |
 | =signal-silence-hysteresis=  | uint   |     150 |   0..1000 | Debounce: speech end (ms)         |
 
 * Signals
