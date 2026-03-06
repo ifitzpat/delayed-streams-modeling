@@ -1,0 +1,41 @@
+[package]
+name = "gst-kyutaistt"
+version = "0.1.0"
+edition = "2021"
+description = "GStreamer element for Kyutai STT speech-to-text"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1.0"
+candle = { version = "0.9.1", package = "candle-core" }
+candle-nn = "0.9.1"
+candle-transformers = "0.9.1"
+gst = { package = "gstreamer", version = "0.23" }
+gst-base = { package = "gstreamer-base", version = "0.23" }
+gst-audio = { package = "gstreamer-audio", version = "0.23" }
+glib = "0.20"
+once_cell = "1.0"
+hf-hub = "0.4.3"
+kaudio = "0.2.1"
+moshi = "0.6.1"
+rubato = "0.16"
+sentencepiece = "0.11.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lib]
+name = "gstkyutaistt"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[build-dependencies]
+gst-plugin-version-helper = "0.8"
+
+[features]
+default = []
+cuda = ["candle/cuda", "candle-nn/cuda"]
+cudnn = ["candle/cudnn", "candle-nn/cudnn"]
+metal = ["candle/metal", "candle-nn/metal"]
+
+[profile.release]
+lto = true
