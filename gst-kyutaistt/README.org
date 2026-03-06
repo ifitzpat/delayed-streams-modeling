@@ -16,10 +16,10 @@ run-time.*
 
 ** Available models
 
-| Repository                        | Parameters | Languages     |
-|-----------------------------------+------------+---------------|
-| =kyutai/stt-1b-en_fr-candle=        | 1 B        | English, French |
-| =kyutai/stt-2.6b-en-candle=         | 2.6 B      | English       |
+| Repository                   | Parameters | Languages       |
+|------------------------------+------------+-----------------|
+| =kyutai/stt-1b-en_fr-candle=   | 1 B        | English, French |
+| =kyutai/stt-2.6b-en-candle=    | 2.6 B      | English         |
 
 Models are downloaded automatically from HuggingFace Hub on first use.
 
@@ -192,10 +192,10 @@ audio/x-raw,
 Preferred negotiation: =F32LE, rate=24000, channels=1=.  Other
 rates/channels are accepted but converted internally.
 
-| Format | Bytes/sample/channel | Notes                         |
-|--------+----------------------+-------------------------------|
+| Format | Bytes/sample/channel | Notes                           |
+|--------+----------------------+---------------------------------|
 | F32LE  |                    4 | Preferred, no conversion needed |
-| S16LE  |                    2 | Converted to float internally |
+| S16LE  |                    2 | Converted to float internally   |
 
 ** src (ALWAYS)
 
@@ -267,93 +267,93 @@ Created via =gst_element_request_pad()= or autoplugging.  Released via
 
 ** Model & Core
 
-| Property          | Type   | Default                       | Range     | Description                          |
-|-------------------+--------+-------------------------------+-----------+--------------------------------------|
-| =model=             | string | =kyutai/stt-1b-en_fr-candle=    | HF repo   | HuggingFace repo ID or local path    |
-| =model-path=        | string | =model.safetensors=             | filename  | Model weights file within the repo   |
-| =language=          | string | =auto=                          | ISO 639-1 | Language code ("auto" to detect)     |
-| =use-cpu=           | bool   | FALSE                         |           | Force CPU inference (disable GPU)    |
-| =temperature=       | float  | 0.0                           | 0.0..1.0  | Sampling temperature                 |
-| =initial-prompt=    | string | NULL                          | text      | Optional context prompt              |
+| Property       | Type   | Default                    | Range     | Description                        |
+|----------------+--------+----------------------------+-----------+------------------------------------|
+| =model=          | string | =kyutai/stt-1b-en_fr-candle= | HF repo   | HuggingFace repo ID or local path  |
+| =model-path=     | string | =model.safetensors=          | filename  | Model weights file within the repo |
+| =language=       | string | =auto=                       | ISO 639-1 | Language code ("auto" to detect)   |
+| =use-cpu=        | bool   | FALSE                      |           | Force CPU inference (disable GPU)  |
+| =temperature=    | float  | 0.0                        | 0.0..1.0  | Sampling temperature               |
+| =initial-prompt= | string | NULL                       | text      | Optional context prompt            |
 
 ** Transcription
 
-| Property             | Type | Default | Description                |
-|----------------------+------+---------+----------------------------|
-| =detect-language=      | bool | TRUE    | Auto-detect language       |
-| =use-unix-timestamps=  | bool | FALSE   | Unix timestamps in output  |
+| Property            | Type | Default | Description               |
+|---------------------+------+---------+---------------------------|
+| =detect-language=     | bool | TRUE    | Auto-detect language      |
+| =use-unix-timestamps= | bool | FALSE   | Unix timestamps in output |
 
 ** VAD (Neural)
 
 The Kyutai STT model has a built-in neural VAD head that predicts
 no-speech probability at multiple time horizons (~0.5s, ~1s, ~2s, ~3s).
 
-| Property               | Type  | Default | Range     | Description                          |
-|------------------------+-------+---------+-----------+--------------------------------------|
-| =enable-vad=             | bool  | TRUE    |           | Enable neural voice activity detection |
-| =vad-threshold=          | float | 0.7     | 0.0..1.0  | VAD speech probability threshold     |
-| =no-speech-threshold=    | float | 0.6     | 0.0..1.0  | No-speech probability threshold (2s horizon) |
+| Property            | Type  | Default |    Range | Description                                  |
+|---------------------+-------+---------+----------+----------------------------------------------|
+| =enable-vad=          | bool  |    TRUE |          | Enable neural voice activity detection       |
+| =vad-threshold=       | float |     0.7 | 0.0..1.0 | VAD speech probability threshold             |
+| =no-speech-threshold= | float |     0.6 | 0.0..1.0 | No-speech probability threshold (2s horizon) |
 
 ** Pause & Turn-Taking Detection
 
 Energy-based heuristics that supplement the neural VAD.
 
-| Property                    | Type   | Default | Range     | Description                          |
-|-----------------------------+--------+---------+-----------+--------------------------------------|
-| =enable-pause-detection=      | bool   | TRUE    |           | Enable energy-based pause signals    |
-| =pause-energy-threshold=      | double | 0.005   | 0.0..1.0  | RMS energy threshold for pause       |
-| =pause-min-duration=          | uint   | 100     | 0..5000   | Min pause duration (ms)              |
-| =boundary-min-duration=       | uint   | 200     | 0..5000   | Min pause for boundary (ms)          |
-| =turn-silence-threshold=      | uint   | 500     | 100..5000 | Silence for turn-end (ms)            |
-| =min-turn-speech-duration=    | uint   | 200     | 0..5000   | Min speech before turn-end (ms)      |
-| =signal-speech-hysteresis=    | uint   | 60      | 0..1000   | Debounce: speech start (ms)          |
-| =signal-silence-hysteresis=   | uint   | 150     | 0..1000   | Debounce: speech end (ms)            |
+| Property                   | Type   | Default |     Range | Description                       |
+|----------------------------+--------+---------+-----------+-----------------------------------|
+| =enable-pause-detection=     | bool   |    TRUE |           | Enable energy-based pause signals |
+| =pause-energy-threshold=     | double |   0.005 |  0.0..1.0 | RMS energy threshold for pause    |
+| =pause-min-duration=         | uint   |     100 |   0..5000 | Min pause duration (ms)           |
+| =boundary-min-duration=      | uint   |     200 |   0..5000 | Min pause for boundary (ms)       |
+| =turn-silence-threshold=     | uint   |     500 | 100..5000 | Silence for turn-end (ms)         |
+| =min-turn-speech-duration=   | uint   |     200 |   0..5000 | Min speech before turn-end (ms)   |
+| =signal-speech-hysteresis= | uint   |      60 |   0..1000 | Debounce: speech start (ms)       |
+| =signal-silence-hysteresis=  | uint   |     150 |   0..1000 | Debounce: speech end (ms)         |
 
 * Signals
 
 ** Model Lifecycle
 
-| Signal              | Parameters                    | Description               |
-|---------------------+-------------------------------+---------------------------|
-| =model-loaded=        | (string hf_repo)              | Model successfully loaded |
-| =model-unloaded=      | (void)                        | Model unloaded            |
-| =model-load-failed=   | (string error_message)        | Model load failure        |
-| =model-info=          | (GstStructure* info)          | Model details after load  |
+| Signal            | Parameters             | Description               |
+|-------------------+------------------------+---------------------------|
+| =model-loaded=      | (string hf_repo)       | Model successfully loaded |
+| =model-unloaded=    | (void)                 | Model unloaded            |
+| =model-load-failed= | (string error_message) | Model load failure        |
+| =model-info=        | (GstStructure* info)   | Model details after load  |
 
 =model-info= structure fields: =type=, =sample-rate=, =gpu-enabled=, =hf-repo=, =quantized=.
 
 ** Transcription Events
 
-| Signal                  | Parameters                              | Description              |
-|-------------------------+-----------------------------------------+--------------------------|
-| =segment-transcribed=     | (GstStructure* segment_data)            | Each transcribed segment |
+| Signal                  | Parameters                              | Description               |
+|-------------------------+-----------------------------------------+---------------------------|
+| =segment-transcribed=     | (GstStructure* segment_data)            | Each transcribed segment  |
 | =language-detected=       | (string language, double probability)   | Language detection result |
-| =transcription-started=   | (int64 timestamp_ns)                    | Transcription begins     |
-| =transcription-completed= | (int64 timestamp_ns, int64 duration_ns) | Transcription ends       |
+| =transcription-started=   | (int64 timestamp_ns)                    | Transcription begins      |
+| =transcription-completed= | (int64 timestamp_ns, int64 duration_ns) | Transcription ends        |
 
 ** VAD & Speech Activity
 
-| Signal                 | Parameters                                     | Description              |
-|------------------------+------------------------------------------------+--------------------------|
-| =vad-speech-detected=    | (int64 timestamp_ns, bool is_speech)           | Neural VAD state change  |
-| =speech-start=           | (int64 timestamp_ns)                           | Speech begins (debounced) |
-| =speech-end=             | (int64 timestamp_ns, int64 duration_ns)        | Speech ends (debounced)  |
-| =silence-detected=       | (int64 timestamp_ns, int64 duration_ns)        | Extended silence         |
-| =pause-detected=         | (int64 timestamp_ns, int64 duration_ns, double energy) | Brief pause during speech |
-| =boundary-detected=      | (int64 timestamp_ns, double confidence)        | Likely sentence boundary |
+| Signal              | Parameters                                             | Description               |
+|---------------------+--------------------------------------------------------+---------------------------|
+| =vad-speech-detected= | (int64 timestamp_ns, bool is_speech)                   | Neural VAD state change   |
+| =speech-start=        | (int64 timestamp_ns)                                   | Speech begins (debounced) |
+| =speech-end=          | (int64 timestamp_ns, int64 duration_ns)                | Speech ends (debounced)   |
+| =silence-detected=    | (int64 timestamp_ns, int64 duration_ns)                | Extended silence          |
+| =pause-detected=      | (int64 timestamp_ns, int64 duration_ns, double energy) | Brief pause during speech |
+| =boundary-detected=   | (int64 timestamp_ns, double confidence)                | Likely sentence boundary  |
 
 ** Turn-Taking
 
-| Signal     | Parameters                                                           | Description        |
-|------------+----------------------------------------------------------------------+--------------------|
-| =turn-end=   | (int64 timestamp_ns, int64 speech_duration_ns, int64 silence_ns)   | Debounced turn-end |
+| Signal   | Parameters                                                       | Description        |
+|----------+------------------------------------------------------------------+--------------------|
+| =turn-end= | (int64 timestamp_ns, int64 speech_duration_ns, int64 silence_ns) | Debounced turn-end |
 
 ** Diagnostics
 
-| Signal            | Parameters                     | Description                |
-|-------------------+--------------------------------+----------------------------|
-| =buffer-overflow=   | (uint64 dropped_samples)       | Buffer overflow warning    |
-| =mode-changed=      | (int32 old_mode, int32 new_mode) | Configuration mode changed |
+| Signal          | Parameters                       | Description                |
+|-----------------+----------------------------------+----------------------------|
+| =buffer-overflow= | (uint64 dropped_samples)         | Buffer overflow warning    |
+| =mode-changed=    | (int32 old_mode, int32 new_mode) | Configuration mode changed |
 
 * Architecture
 
@@ -439,15 +439,15 @@ the model's *algorithmic delay* (=asr_delay_in_tokens=), not GPU speed.  The
 model intentionally looks ahead by N tokens before committing to text output,
 trading latency for accuracy.
 
-| Component              | 1B (en/fr)  | 2.6B (en)    | Notes                                   |
-|------------------------+-------------+--------------+-----------------------------------------|
-| Audio chunk            | 80 ms       | 80 ms        | 1920 samples @ 24 kHz, fixed            |
-| Mimi tokeniser         | ~1 ms       | ~1 ms        | Small convolutional codec, trivial on GPU |
-| Algorithmic delay      | *480 ms*    | *2560 ms*    | 6 × 80 ms vs 32 × 80 ms                |
-| Transformer forward    | ~2–4 ms     | ~5–10 ms     | Single causal step with KV cache        |
-| Word assembly          | 0–160 ms    | 0–160 ms     | Word emitted when next word starts      |
-|------------------------+-------------+--------------+-----------------------------------------|
-| *Total (spoken → text)* | *~560–640 ms* | *~2640–2720 ms* |                                    |
+| Component             | 1B (en/fr)  | 2.6B (en)     | Notes                                     |
+|-----------------------+-------------+---------------+-------------------------------------------|
+| Audio chunk           | 80 ms       | 80 ms         | 1920 samples @ 24 kHz, fixed              |
+| Mimi tokeniser        | ~1 ms       | ~1 ms         | Small convolutional codec, trivial on GPU |
+| Algorithmic delay     | *480 ms*      | *2560 ms*       | 6 × 80 ms vs 32 × 80 ms                   |
+| Transformer forward   | ~2–4 ms     | ~5–10 ms      | Single causal step with KV cache          |
+| Word assembly         | 0–160 ms    | 0–160 ms      | Word emitted when next word starts        |
+|-----------------------+-------------+---------------+-------------------------------------------|
+| *Total (spoken → text)* | *~560–640 ms* | *~2640–2720 ms* |                                           |
 
 The algorithmic delay is set by =asr_delay_in_tokens= in the config:
 
@@ -466,12 +466,12 @@ Two complementary mechanisms detect when a speaker has finished their turn:
 The energy-based pause detector (=vad.rs=) fires =turn-end= after sustained
 silence following speech.  Default timing:
 
-| Stage                  | Duration  | Configurable via            |
-|------------------------+-----------+-----------------------------|
-| Silence hysteresis     | 150 ms    | =signal-silence-hysteresis=   |
-| Turn silence threshold | 500 ms    | =turn-silence-threshold=      |
-|------------------------+-----------+-----------------------------|
-| *Total from last speech* | *~650 ms* |                             |
+| Stage                  | Duration | Configurable via          |
+|------------------------+----------+---------------------------|
+| Silence hysteresis     | 150 ms   | =signal-silence-hysteresis= |
+| Turn silence threshold | 500 ms   | =turn-silence-threshold=    |
+|------------------------+----------+---------------------------|
+| *Total from last speech* | *~650 ms*  |                           |
 
 Requirements: silence ≥ =turn-silence-threshold= (500 ms) after speech ≥
 =min-turn-speech-duration= (200 ms).
@@ -481,12 +481,12 @@ Requirements: silence ≥ =turn-silence-threshold= (500 ms) after speech ≥
 The model's extra heads predict no-speech probability at 4 time horizons.
 The 2-second horizon (index 2) is the primary turn-end signal:
 
-| Horizon index | Look-ahead | Purpose              |
-|---------------+------------+----------------------|
-|             0 | ~0.5 s     | Immediate            |
-|             1 | ~1.0 s     | Short-term           |
+| Horizon index | Look-ahead | Purpose             |
+|---------------+------------+---------------------|
+|             0 | ~0.5 s     | Immediate           |
+|             1 | ~1.0 s     | Short-term          |
 |             2 | ~2.0 s     | *Primary turn signal* |
-|             3 | ~3.0 s     | Long-term            |
+|             3 | ~3.0 s     | Long-term           |
 
 The signal fires when =prs[2] > no-speech-threshold= (default: 0.6).
 
@@ -506,9 +506,9 @@ understands linguistic context and can distinguish intentional pauses
 
 When both systems are enabled, the earliest signal wins.
 
-| Model | Energy turn-end | Neural turn-end | First signal  |
-|-------+-----------------+-----------------+---------------|
-| 1B    | ~650 ms         | ~560–720 ms     | ~560–650 ms   |
+| Model | Energy turn-end | Neural turn-end | First signal     |
+|-------+-----------------+-----------------+------------------|
+| 1B    | ~650 ms         | ~560–720 ms     | ~560–650 ms      |
 | 2.6B  | ~650 ms         | ~2.6–3.0 s      | ~650 ms (energy) |
 
 For the *1B model*, both signals arrive at roughly the same time, providing
@@ -529,17 +529,17 @@ responsive conversational interaction.
 
 * Differences from whispertranscribe
 
-| Aspect                | whispertranscribe          | kyutaistt                          |
-|-----------------------+----------------------------+------------------------------------|
-| Backend               | whisper.cpp (C++)          | Candle + Moshi (Rust)              |
-| Model format          | GGUF files (local)         | SafeTensors / GGUF (HuggingFace)   |
-| Model property        | =model= (filepath)          | =model= (HF repo ID)                |
-| Native sample rate    | 16 kHz                     | 24 kHz                             |
-| Streaming             | Sliding window + consensus | Native streaming (80ms chunks)     |
-| VAD                   | Silero VAD (ONNX)          | Built-in neural VAD head           |
-| Python dependency     | None (C++)                 | None (Rust)                        |
-| GPU support           | Via whisper.cpp            | CUDA, cuDNN, Metal (compile flags) |
-| Quantisation          | GGUF built-in              | GGUF support via Candle            |
+| Aspect             | whispertranscribe          | kyutaistt                          |
+|--------------------+----------------------------+------------------------------------|
+| Backend            | whisper.cpp (C++)          | Candle + Moshi (Rust)              |
+| Model format       | GGUF files (local)         | SafeTensors / GGUF (HuggingFace)   |
+| Model property     | =model= (filepath)           | =model= (HF repo ID)                 |
+| Native sample rate | 16 kHz                     | 24 kHz                             |
+| Streaming          | Sliding window + consensus | Native streaming (80ms chunks)     |
+| VAD                | Silero VAD (ONNX)          | Built-in neural VAD head           |
+| Python dependency  | None (C++)                 | None (Rust)                        |
+| GPU support        | Via whisper.cpp            | CUDA, cuDNN, Metal (compile flags) |
+| Quantisation       | GGUF built-in              | GGUF support via Candle            |
 
 The element is pad-compatible: same sink caps, same src caps
 (=application/x-json-transcription,format=whisper=), same ctrl pad caps,
@@ -610,12 +610,12 @@ transcribed speech and want maximum accuracy.
 Start from the en_fr checkpoint, swap the tokeniser and text
 embeddings, and fine-tune all transformer weights.
 
-| Resource        | Recommendation                  |
-|-----------------+---------------------------------|
-| GPUs            | 1–2× A100-80GB or 1× H100-80GB |
-| VRAM per GPU    | 40–80 GB                        |
-| Training data   | 1,000–10,000 hours              |
-| Training time   | Hours to days                   |
+| Resource      | Recommendation                 |
+|---------------+--------------------------------|
+| GPUs          | 1–2× A100-80GB or 1× H100-80GB |
+| VRAM per GPU  | 40–80 GB                       |
+| Training data | 1,000–10,000 hours             |
+| Training time | Hours to days                  |
 
 *Expected quality*: Very good.  The transformer has already learned
 general speech-to-text mappings from English/French; it transfers well to
@@ -631,12 +631,12 @@ Best balance of quality, cost, and turnaround time.
 
 Freeze most weights and train low-rank adapters (rank 16–32) on top.
 
-| Resource        | Recommendation            |
-|-----------------+---------------------------|
-| GPUs            | 1× RTX 4090 / A6000 (24 GB) |
-| VRAM per GPU    | 16–24 GB                  |
-| Training data   | 100–500 hours             |
-| Training time   | Hours                     |
+| Resource      | Recommendation              |
+|---------------+-----------------------------|
+| GPUs          | 1× RTX 4090 / A6000 (24 GB) |
+| VRAM per GPU  | 16–24 GB                    |
+| Training data | 100–500 hours               |
+| Training time | Hours                       |
 
 *Expected quality*: Good for well-resourced languages where the
 pre-trained model already has some cross-lingual transfer.  Expect
@@ -648,11 +648,11 @@ you have limited data, or when you only have consumer GPU hardware.
 
 ** Expected Performance Comparison
 
-| Scenario          | Relative WER | Compute cost | Data needed    | Turnaround | Best for                      |
-|-------------------+--------------+--------------+----------------+------------+-------------------------------|
-| From scratch      | 1.0× (best)  | $$$$         | 5K–50K hours   | Weeks      | Production, maximum quality   |
-| Full fine-tune    | 1.05–1.15×   | $$           | 1K–10K hours   | Days       | Most new languages (default)  |
-| LoRA fine-tune    | 1.15–1.30×   | $            | 100–500 hours  | Hours      | Prototyping, budget hardware  |
+| Scenario       | Relative WER | Compute cost | Data needed   | Turnaround | Best for                     |
+|----------------+--------------+--------------+---------------+------------+------------------------------|
+| From scratch   | 1.0× (best)  | $$$$         | 5K–50K hours  | Weeks      | Production, maximum quality  |
+| Full fine-tune | 1.05–1.15×   | $$           | 1K–10K hours  | Days       | Most new languages (default) |
+| LoRA fine-tune | 1.15–1.30×   | $            | 100–500 hours | Hours      | Prototyping, budget hardware |
 
 Notes:
 - WER = Word Error Rate; lower is better.  "1.0×" = baseline from-scratch.
@@ -666,17 +666,17 @@ Notes:
 
 For a single-GPU full fine-tune, the memory budget is roughly:
 
-| Component               | Size      |
-|-------------------------+-----------|
-| Model weights (bf16)    | ~2 GB     |
-| Gradients (bf16)        | ~2 GB     |
-| AdamW optimizer states  | ~8 GB     |
-| Activations (batch=1)   | ~4–8 GB   |
-| Activations (batch=16)  | ~20–40 GB |
-| Framework overhead      | ~2–4 GB   |
-|-------------------------+-----------|
-| *Total (batch=1)*       | *~18 GB*  |
-| *Total (batch=16)*      | *~40 GB*  |
+| Component              | Size      |
+|------------------------+-----------|
+| Model weights (bf16)   | ~2 GB     |
+| Gradients (bf16)       | ~2 GB     |
+| AdamW optimizer states | ~8 GB     |
+| Activations (batch=1)  | ~4–8 GB   |
+| Activations (batch=16) | ~20–40 GB |
+| Framework overhead     | ~2–4 GB   |
+|------------------------+-----------|
+| *Total (batch=1)*        | *~18 GB*    |
+| *Total (batch=16)*       | *~40 GB*    |
 
 With gradient checkpointing, activation memory can be reduced ~3× at the
 cost of ~30% slower training.
